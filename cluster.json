@@ -1,0 +1,27 @@
+{
+  "__default__" :
+  {
+    "h_vmem" : "8G",
+    "mem_free" : "4G",
+    "m_mem_free" : "4G",
+    "output" : "\"'logs/cluster/{rule}.{wildcards}.out'\""
+  },
+  "run_spades_paired" :
+  {
+    "h_vmem" : "8G",
+    "mem_free" : "4G",
+    "m_mem_free" : "4G"
+  },
+  "run_spades_unpaired" :
+  {
+    "h_vmem" : "8G",
+    "mem_free" : "4G",
+    "m_mem_free" : "4G"
+  },
+  "checkm_tree":
+  {
+    "h_vmem" : "18G",
+    "mem_free" : "16G",
+    "m_mem_free" : "16G"
+  }
+}

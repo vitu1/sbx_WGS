@@ -1,0 +1,10 @@
+sbx_SPARCQ:
+  threads: 4
+  rank:
+  taxon:
+  ncbi_ref:
+  ref_sample:
+  alnLen: 30
+  percIdentity: 0.97
+  window_size: 5000
+  sampling: 5000

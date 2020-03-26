@@ -1,0 +1,354 @@
+# -*- mode: Snakemake -*-
+#
+# Rules for de novo assembly using SPAdes and post-assembly assessments
+
+from sunbeamlib import samtools
+import glob
+import pysam
+import re
+
+rule all_SPARCQ:
+    input:
+       [
+       str(ASSEMBLY_FP/'checkm_output'/'plots_done'),
+       str(ASSEMBLY_FP/'checkm_output'/'extended_summary.tsv'),
+       str(ASSEMBLY_FP/'quast_output'/'icarus.html'),
+       expand(
+          str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'{sample}.bam.bai'),
+             sample=Samples.keys()),
+       str(ASSEMBLY_FP/'read_mapping'/'filtered_coverage.csv'),
+       str(ASSEMBLY_FP/'read_mapping'/'filtered_numReads.csv'),
+       str(ASSEMBLY_FP/'read_mapping'/'filtered_sliding_coverage.csv'),
+       str(QC_FP/'reports'/'preprocess_summary.tsv'),
+       str(QC_FP/'reports'/'fastqc_quality.tsv')
+       ]
+
+ruleorder: run_spades_paired > run_spades_unpaired
+
+rule run_spades_paired:
+    input:
+       r1 = str(QC_FP/'decontam'/'{sample}_1.fastq.gz'),
+       r2 = str(QC_FP/'decontam'/'{sample}_2.fastq.gz')
+    output:
+       str(ASSEMBLY_FP/'spades'/'{sample}'/'done')
+    threads: 
+      Cfg['sbx_SPARCQ']['threads']
+    params: 
+       outdir = str(ASSEMBLY_FP/'spades'/'{sample}'),
+       mk_dir = str(ASSEMBLY_FP/'spades_bins'),
+       copy_from = str(ASSEMBLY_FP/'spades'/'{sample}'/'contigs.fasta'),
+       copy_to = str(ASSEMBLY_FP/'spades_bins'/'{sample}_assembled_contigs.fna')
+    conda:
+        "sbx_SPARCQ_env.yml"
+    shell:
+       """
+       spades.py -1 {input.r1} -2 {input.r2} -o {params.outdir} -t {threads} -m 100 && \
+       mkdir -p {params.mk_dir} && \
+       cp {params.copy_from} {params.copy_to} && \
+       touch {output}
+       """
+
+rule run_spades_unpaired:
+    input:
+       r1 = str(QC_FP/'decontam'/'{sample}_1.fastq.gz')
+    output:
+       str(ASSEMBLY_FP/'spades'/'{sample}'/'done')
+    threads:
+      Cfg['sbx_SPARCQ']['threads']
+    params:
+       outdir = str(ASSEMBLY_FP/'spades'/'{sample}'),
+       mk_dir = str(ASSEMBLY_FP/'spades_bins'),
+       copy_from = str(ASSEMBLY_FP/'spades'/'{sample}'/'contigs.fasta'),
+       copy_to = str(ASSEMBLY_FP/'spades_bins'/'{sample}_assembled_contigs.fna')
+    conda:
+        "sbx_SPARCQ_env.yml"
+    shell:
+       """
+       spades.py -s {input.r1} -o {params.outdir} -t {threads} -m 100 && \
+       mkdir -p {params.mk_dir} && \
+       cp {params.copy_from} {params.copy_to} && \       
+       touch {output}
+       """
+
+rule checkm_tree:
+    input:
+       expand(str(ASSEMBLY_FP/'spades'/'{sample}'/'done'),
+               sample=Samples.keys())
+    output:
+       str(ASSEMBLY_FP/'checkm_output'/'tree_done')
+    threads:
+       len(Samples)
+    params:
+       bins = str(ASSEMBLY_FP/'spades_bins'),
+       tree_output = str(ASSEMBLY_FP/'checkm_output'/'tree_output'),
+       taxon = Cfg['sbx_SPARCQ']['taxon']
+    run:
+       rank = Cfg['sbx_SPARCQ'].get('rank')
+       if rank:
+          shell("""
+          checkm taxonomy_wf -t {threads} {rank} "{params.taxon}" {params.bins} {params.tree_output} && \
+          touch {output}
+          """)
+       else:
+          shell("""
+          checkm lineage_wf -t {threads} {params.bins} {params.tree_output} && \
+          touch {output}
+          """)
+
+rule checkm_plot:
+    input:
+       str(ASSEMBLY_FP/'checkm_output'/'tree_done')
+    output:
+       str(ASSEMBLY_FP/'checkm_output'/'plots_done')
+    params:
+       bins = str(ASSEMBLY_FP/'spades_bins'),
+       plots_output = str(ASSEMBLY_FP/'checkm_output'/'plots_output'),
+       tree_output = str(ASSEMBLY_FP/'checkm_output'/'tree_output')
+    run:
+       shell("""
+       checkm nx_plot {params.bins} {params.plots_output} && \
+       checkm gc_plot {params.bins} {params.plots_output} 95 && \
+       checkm coding_plot {params.tree_output} {params.bins} {params.plots_output} 95 && \
+       checkm marker_plot {params.tree_output} {params.bins} {params.plots_output} && \
+       touch {output}
+       """)
+
+rule checkm_summary:
+    input:
+       str(ASSEMBLY_FP/'checkm_output'/'tree_done')
+    output:
+       str(ASSEMBLY_FP/'checkm_output'/'extended_summary.tsv')
+    params:
+       tree_output = str(ASSEMBLY_FP/'checkm_output'/'tree_output')
+    run:
+       taxon = Cfg['sbx_SPARCQ'].get('taxon')
+       if taxon:
+          shell("""
+          checkm qa --out_format 2 --tab_table --file {output} "{params.tree_output}/{taxon}.ms" {params.tree_output} && \
+          touch {output}
+          """)
+       else:
+          shell("""
+          checkm qa --out_format 2 --tab_table --file {output} "{params.tree_output}/lineage.ms" {params.tree_output} && \
+          touch {output}
+          """)
+
+def get_first_key(input_list):
+    return(str(list(input_list)[0]))
+
+rule quast:
+    input:
+       expand(str(ASSEMBLY_FP/'spades'/'{sample}'/'done'),
+               sample=Samples.keys())
+    output:
+       str(ASSEMBLY_FP/'quast_output'/'icarus.html')
+    params:
+       fna_input = expand(str(ASSEMBLY_FP/'spades_bins'/'{sample}_assembled_contigs.fna'),
+               sample=Samples.keys()),
+       fna_input_dir = str(ASSEMBLY_FP/'spades_bins'),
+       quast_output = str(ASSEMBLY_FP/'quast_output')
+    run:
+       ncbi_ref = Cfg['sbx_SPARCQ'].get('ncbi_ref')
+       ref_sample = Cfg['sbx_SPARCQ'].get('ref_sample')
+       first_sample = get_first_key(Samples.keys())
+       if ncbi_ref:
+          ncbi_ref = str(ncbi_ref)
+          gff = ncbi_ref[:-3] + 'gff'
+          shell("""
+          quast {params.fna_input} -r {ncbi_ref} -g {gff} -o {params.quast_output}
+          """)
+       elif ref_sample:
+          shell("""
+          quast {params.fna_input} -r "{params.fna_input_dir}/{ref_sample}_assembled_contigs.fna" -o {params.quast_output}
+          """)
+       else:
+          shell("""
+          quast {params.fna_input} -o {params.quast_output}
+          """)
+   
+rule index_assembled_genomes:
+    input:
+        str(ASSEMBLY_FP/'spades'/'{sample}'/'done')
+    output:
+        str(ASSEMBLY_FP/'read_mapping'/'bwa'/'{sample}_assembled_contigs.fna.amb')
+    params:
+        spades_sample = str(ASSEMBLY_FP/'spades_bins'/'{sample}_assembled_contigs.fna'),
+        bwa_dir = str(ASSEMBLY_FP/'read_mapping'/'bwa'),
+        bwa_sample = str(ASSEMBLY_FP/'read_mapping'/'bwa'/'{sample}_assembled_contigs.fna')
+    shell:
+        "mkdir -p {params.bwa_dir} && \
+         cp {params.spades_sample} {params.bwa_dir} && \
+         cd {params.bwa_dir} && \
+         bwa index {params.bwa_sample}"
+
+rule align_2_genome:
+    input:
+        reads = expand(
+            str(QC_FP/'decontam'/'{{sample}}_{rp}.fastq.gz'),
+            rp = Pairs),
+        index = str(ASSEMBLY_FP/'read_mapping'/'bwa'/'{sample}_assembled_contigs.fna.amb')
+    output:
+        temp(str(ASSEMBLY_FP/'read_mapping'/'bwa'/'intermediates'/'{sample}.sam'))
+    threads:
+        Cfg['sbx_SPARCQ']['threads']
+    params:
+        str(ASSEMBLY_FP/'read_mapping'/'bwa'/'{sample}_assembled_contigs.fna')
+    shell:
+        """
+        bwa mem -M -t {threads} \
+        {params} \
+        {input.reads} -o {output}
+        """
+
+rule assembly_samtools_convert:
+    input:
+        str(ASSEMBLY_FP/'read_mapping'/'bwa'/'intermediates'/'{sample}.sam')
+    output:
+        str(ASSEMBLY_FP/'read_mapping'/'bwa'/'{sample}.bam')
+    threads:
+        Cfg['sbx_SPARCQ']['threads']
+    shell:
+        """
+        samtools view -@ {threads} -b {input} | \
+        samtools sort -@ {threads} > {output}
+        """
+
+def filter_bam_alignments(bam_in_fp, bam_out_fp, percIdentity, alnLen):
+    """                                              
+    Filter the alignments in the bam file with the defined percent identity
+    and alingment length thresholds.
+    bam_in_fp:BAM file name to filer
+    bam_out_fp:BAM file name to output
+    percIdentity:percent identity threshold (out of 1)
+    alnLen:alignment length threshold
+    """
+    f_in = pysam.AlignmentFile(bam_in_fp)
+    with pysam.AlignmentFile(bam_out_fp, "wb", template=f_in) as out_file:
+        for item in f_in:
+            if(item.has_tag("MD")):
+                mdstr = item.get_tag("MD")
+                mdSub = re.sub(r'([\\^]*[ACGT]+)[0]*', ' \\1 ', mdstr)
+                mdSplit = re.split('[ ]+', mdSub)
+                nums = [int(i) for i in mdSplit if i.isdigit()]
+                letters = [i for i in mdSplit if not i.isdigit()]
+                letters = re.sub('[^ATCG]', '', "".join(letters))
+                
+                alnLen_seq = sum(nums) + len(letters)
+                percIdentity_seq = sum(nums) / alnLen_seq
+                
+                if (alnLen_seq>alnLen and percIdentity_seq>percIdentity):
+                    out_file.write(item)
+    f_in.close()
+
+rule filter_aln_quality:
+    input:
+        str(ASSEMBLY_FP/'read_mapping'/'bwa'/'{sample}.bam')
+    output:
+        str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'{sample}.bam')
+    params:
+        alnLen=Cfg['sbx_SPARCQ']['alnLen'],
+        percIdentity=Cfg['sbx_SPARCQ']['percIdentity']
+    run:
+        print(input)
+        filter_bam_alignments(
+            input[0], output[0], params.percIdentity, params.alnLen)
+
+rule index_samtools:
+    input: str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'{sample}.bam')
+    output: str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'{sample}.bam.bai')
+    shell: "samtools index {input} {output}"
+
+rule samtools_get_coverage_filtered:
+    input:
+        str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'{sample}.bam')
+    output:
+        str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'intermediates'/'{sample}.csv')
+    run:
+        samtools.get_coverage_stats(
+            wildcards.sample, input[0], wildcards.sample, output[0])
+
+def _sorted_csvs(w):
+    pattern = str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'intermediates'/'{sample}.csv')
+    paths = sorted(expand(pattern, sample=Samples.keys()))
+    return(paths)
+
+rule summarize_assembly_coverage:
+    input: _sorted_csvs
+    output:
+        str(ASSEMBLY_FP/'read_mapping'/'filtered_coverage.csv')
+    shell: "(head -n 1 {input[0]}; tail -q -n +2 {input}) > {output}"
+
+rule samtools_summarize_num_mapped_reads:
+    input:
+        str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'{sample}.bam')
+    output:
+        str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'intermediates'/'numReads'/'{sample}.csv')
+    shell:
+        """
+        samtools idxstats {input} | (sed 's/^/{wildcards.sample}\t/') > {output}
+        """
+
+def _numReads(w):
+    pattern = str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'intermediates'/'numReads'/'{sample}.csv')
+    paths = sorted(expand(pattern, sample=Samples.keys()))
+    return(paths)
+
+rule samtools_summarize_numReads:
+    input:
+        _numReads
+    output:
+        str(ASSEMBLY_FP/'read_mapping'/'filtered_numReads.csv')
+    shell: "(cat {input}) > {output}"
+
+def sliding_window_coverage(genome, bamfile, sample, output_fp, N, sampling):
+    print(genome)
+    print(bamfile)
+    print(sample)
+    print(output_fp)
+    print(N)
+    print(sampling)
+
+    output_rows = []
+    args = ["samtools", "depth", "-aa", bamfile]
+    p = subprocess.Popen(args, stdout=subprocess.PIPE, universal_newlines=True)
+    # Organize into a list of depths for each segment, streaming in text
+    reader = csv.reader(p.stdout, delimiter='\t')
+    data = {}
+    for row in reader:
+    	if not data.get(row[0]):
+           data[row[0]] = []
+    	data[row[0]].append(int(row[2]))
+
+    fields = ['Genome', 'Segment', 'Sample', 'Location', 'Average']
+    with open(output_fp, 'w') as f:
+        writer = csv.writer(f)
+    	writer.writerow(fields)
+    	for segment in data.keys():
+            if len(data[segment]) > sampling:
+               moving_avg = numpy.convolve(data[segment], numpy.ones((N,))/N, mode='full')
+               for i,x in enumerate(moving_avg):
+                   if (i%sampling == 0): 
+                       writer.writerow([genome, segment, sample, i, x])
+
+rule samtools_get_sliding_coverage:
+    input:
+        str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'{sample}.bam')
+    output:
+        str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'intermediates'/'sliding_coverage'/'{sample}.csv')
+    params:
+        window_size = Cfg['sbx_SPARCQ']['window_size'],
+        sampling = Cfg['sbx_SPARCQ']['sampling']
+    run:
+        sliding_window_coverage(wildcards.sample, input[0], wildcards.sample, output[0], params.window_size, params.sampling)
+
+def _sliding_coverage_csvs(w):
+    pattern = str(ASSEMBLY_FP/'read_mapping'/'filtered_bam'/'intermediates'/'sliding_coverage'/'{sample}.csv')
+    paths = sorted(expand(pattern, sample=Samples.keys()))
+    return(paths)
+
+rule samtools_summarize_sliding_coverage:
+    input:
+        _sliding_coverage_csvs
+    output:
+        str(ASSEMBLY_FP/'read_mapping'/'filtered_sliding_coverage.csv')
+    shell: "(head -n 1 {input[0]}; tail -q -n +2 {input}) > {output}"

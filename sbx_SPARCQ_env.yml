@@ -1,0 +1,9 @@
+channels:
+ - conda-forge
+ - bioconda
+dependencies:
+ - bedtools
+ - spades
+ - samtools
+ - checkm-genome
+ - quast
