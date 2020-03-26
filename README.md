@@ -40,4 +40,4 @@ window_size (Read mapping): define the window size to do sliding window coverage
 sampling (read mapping): define minimum length of data to slide over
 
 ## Contributors
-This extension was adapted from pipelines written by Scott Daniels, Ceylan Tanes, Jung-Jin Lee, and Louis Taylor. Read mapping rules were adapted from the sunbeam pipeline (https://github.com/sunbeam-labs/sunbeam/tree/stable/rules/mapping) and sbx_mapping_withFilter (https://github.com/ctanes/sbx_mapping_withFilter)
+This extension was adapted from pipelines written by Scott Daniel, Ceylan Tanes, Jung-Jin Lee, and Louis Taylor. Read mapping rules were adapted from the sunbeam pipeline (https://github.com/sunbeam-labs/sunbeam/tree/stable/rules/mapping) and sbx_mapping_withFilter (https://github.com/ctanes/sbx_mapping_withFilter)
