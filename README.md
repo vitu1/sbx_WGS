@@ -24,7 +24,7 @@ rank (CheckM, optional): one of {life,domain,phylum,class,order,family,genus,spe
 
 taxon (CheckM, optional): choose the taxon for the specified 'rank'; inputting this option will tell CheckM to generate gene markers of the specified taxon to assess completeness of the assembled genome; the default option will be to run the lineage work flow (https://github.com/Ecogenomics/CheckM/wiki/Workflows)
 
-ncbi_ref (QUAST, optional): file path of the downloaded NCBI fasta file (*.fna) of the genome of interest to align the assembled contigs to; 
+ncbi_ref (QUAST, optional): file path of the downloaded NCBI fasta file (*.fna) of the genome of interest to align the assembled contigs to
 ```
 ncbi-genome-download -F fasta,gff -t [Taxonomy ID] -o [file path for ncbi_ref] all
 ```
