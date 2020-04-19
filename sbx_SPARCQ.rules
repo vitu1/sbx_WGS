@@ -64,9 +64,9 @@ rule run_spades_unpaired:
         "sbx_SPARCQ_env.yml"
     shell:
        """
-       spades.py -s {input.r1} -o {params.outdir} -t {threads} -m 100 && \
+       spades.py --s 1 {input.r1} -o {params.outdir} -t {threads} -m 100 && \
        mkdir -p {params.mk_dir} && \
-       cp {params.copy_from} {params.copy_to} && \       
+       cp {params.copy_from} {params.copy_to} && \
        touch {output}
        """
 
