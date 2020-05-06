@@ -20,20 +20,11 @@ cat config.yml >> /path/to/sunbeam_config.yml
 ## Options for config.yml
 threads (SPAdes, BWA, samtools): # of threads to use for running programs
 
-rank (CheckM, optional): one of {life,domain,phylum,class,order,family,genus,species}
+checkm_yml (optional): YAML file containing a sample:rank and sample:taxon dictionary for CheckM parameters (see example)
+rank is one of {life,domain,phylum,class,order,family,genus,species}
+taxon is the taxonomic classification for the specified 'rank'
 
-taxon (CheckM, optional): choose the taxon for the specified 'rank'; inputting this option will tell CheckM to generate gene markers of the specified taxon to assess completeness of the assembled genome; the default option will be to run the lineage work flow (https://github.com/Ecogenomics/CheckM/wiki/Workflows)
-
-ncbi_ref (QUAST, optional): file path of the downloaded NCBI fasta file (*.fna) of the genome of interest to align the assembled contigs to
-```
-ncbi-genome-download -F fasta,gff -t [Taxonomy ID] -o [file path for ncbi_ref] all
-```
-
-ref_sample (QUAST, optional): sample name of interest to align the assembled contigs to; default will be to run QUAST assessment without alignment
-
-alnLen (Read mapping): filter the reads by this minimum length that maps to the assembled genome
-
-percIdentity (Read mapping): filter reads that maps to the genome by this percentage (0 to 1)
+taxid_yml (optional): YAML file containing a sample:TaxonID dictionary for reference genomes to be downloaded by ncbi-genome-download for comparison in QUAST
 
 window_size (Read mapping): define the window size to do sliding window coverage
 
