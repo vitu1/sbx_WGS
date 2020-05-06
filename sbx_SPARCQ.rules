@@ -123,13 +123,11 @@ rule checkm_summary:
        if checkm_yml and wildcards.sample in taxon_yml:
           taxon = str(taxon_yml[wildcards.sample])
           shell("""
-          checkm qa --out_format 2 --tab_table --file {output} "{params.tree_output}/{taxon}.ms" {params.tree_output} && \
-          touch {output}
+          checkm qa --out_format 2 --tab_table --file {output} "{params.tree_output}/{taxon}.ms" {params.tree_output}
           """)
        else:
           shell("""
-          checkm qa --out_format 2 --tab_table --file {output} "{params.tree_output}/lineage.ms" {params.tree_output} && \
-          touch {output}
+          checkm qa --out_format 2 --tab_table --file {output} "{params.tree_output}/lineage.ms" {params.tree_output}
           """)
 
 taxid_yml = Cfg['sbx_SPARCQ'].get('taxid_yml')
