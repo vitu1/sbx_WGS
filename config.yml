@@ -1,10 +1,6 @@
 sbx_SPARCQ:
   threads: 4
-  rank:
-  taxon:
-  ncbi_ref:
-  ref_sample:
-  alnLen: 30
-  percIdentity: 0.97
+  checkm_yml: /scr1/users/tuv/SPARCQ_test/CheckM.yml
+  taxid_yml: /scr1/users/tuv/SPARCQ_test/NCBI_taxID.yml
   window_size: 5000
   sampling: 5000

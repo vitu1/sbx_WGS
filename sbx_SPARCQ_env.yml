@@ -7,3 +7,4 @@ dependencies:
  - samtools
  - checkm-genome
  - quast
+ - ncbi-genome-download

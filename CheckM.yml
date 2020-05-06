@@ -1,0 +1,9 @@
+taxon: {
+'pseudomonas': 'Pseudomonas aeruginosa',
+'saureus': 'Staphylococcus aureus',
+}
+
+rank: {
+'pseudomonas': 'species',
+'saureus': 'species',
+}
