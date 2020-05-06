@@ -20,8 +20,8 @@ cat config.yml >> /path/to/sunbeam_config.yml
 ## Options for config.yml
 threads (SPAdes, BWA, samtools): # of threads to use for running programs
 
-checkm_yml (optional): YAML file containing a sample:rank and sample:taxon dictionary for CheckM parameters (see example)
-rank is one of {life,domain,phylum,class,order,family,genus,species}
+checkm_yml (optional): YAML file containing a sample:rank and sample:taxon dictionary for CheckM parameters (see example);
+rank is one of {life,domain,phylum,class,order,family,genus,species};
 taxon is the taxonomic classification for the specified 'rank'
 
 taxid_yml (optional): YAML file containing a sample:TaxonID dictionary for reference genomes to be downloaded by ncbi-genome-download for comparison in QUAST
