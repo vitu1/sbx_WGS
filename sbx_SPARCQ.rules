@@ -13,7 +13,8 @@ rule all_SPARCQ:
        [expand([str(ASSEMBLY_FP/'checkm_output'/'summary'/'{sample}'/'extended_summary.tsv'),
                 str(ASSEMBLY_FP/'checkm_output'/'plots_output'/'{sample}'/'plots_done'),
                 str(ASSEMBLY_FP/'quast_output'/'{sample}'/'icarus.html'),
-                str(ASSEMBLY_FP/'read_mapping'/'{sample}'/'bwa'/'{sample}.bam.bai')],
+                str(ASSEMBLY_FP/'read_mapping'/'{sample}'/'bwa'/'{sample}.bam.bai'),
+                str(ANNOTATION_FP/'prokka'/'{sample}'/'{sample}.ffn')],
                 sample=Samples.keys()),
        str(ASSEMBLY_FP/'read_mapping'/'all_coverage.csv'),
        str(ASSEMBLY_FP/'read_mapping'/'all_numReads.csv'),
@@ -27,40 +28,50 @@ rule run_spades_paired:
        r1 = str(QC_FP/'decontam'/'{sample}_1.fastq.gz'),
        r2 = str(QC_FP/'decontam'/'{sample}_2.fastq.gz')
     output:
-       str(ASSEMBLY_FP/'spades'/'{sample}'/'done')
+       str(ASSEMBLY_FP/'spades_bins'/'{sample}'/'{sample}_assembled_contigs.fna')
     threads: 
       Cfg['sbx_SPARCQ']['threads']
     params: 
        outdir = str(ASSEMBLY_FP/'spades'/'{sample}'),
        mk_dir = str(ASSEMBLY_FP/'spades_bins'/'{sample}'),
-       copy_from = str(ASSEMBLY_FP/'spades'/'{sample}'/'contigs.fasta'),
-       copy_to = str(ASSEMBLY_FP/'spades_bins'/'{sample}'/'{sample}_assembled_contigs.fna')
+       copy_from = str(ASSEMBLY_FP/'spades'/'{sample}'/'contigs.fasta')
     shell:
        """
        spades.py -1 {input.r1} -2 {input.r2} -o {params.outdir} -t {threads} -m 100 && \
        mkdir -p {params.mk_dir} && \
-       cp {params.copy_from} {params.copy_to} && \
-       touch {output}
+       cp {params.copy_from} {output}
        """
 
 rule run_spades_unpaired:
     input:
        r1 = str(QC_FP/'decontam'/'{sample}_1.fastq.gz')
     output:
-       str(ASSEMBLY_FP/'spades'/'{sample}'/'done')
+       str(ASSEMBLY_FP/'spades_bins'/'{sample}'/'{sample}_assembled_contigs.fna')
     threads:
       Cfg['sbx_SPARCQ']['threads']
     params:
        outdir = str(ASSEMBLY_FP/'spades'/'{sample}'),
        mk_dir = str(ASSEMBLY_FP/'spades_bins'/'sample'),
-       copy_from = str(ASSEMBLY_FP/'spades'/'{sample}'/'contigs.fasta'),
-       copy_to = str(ASSEMBLY_FP/'spades_bins'/'{sample}'/'{sample}_assembled_contigs.fna')
+       copy_from = str(ASSEMBLY_FP/'spades'/'{sample}'/'contigs.fasta')
     shell:
        """
        spades.py --s 1 {input.r1} -o {params.outdir} -t {threads} -m 100 && \
        mkdir -p {params.mk_dir} && \
-       cp {params.copy_from} {params.copy_to} && \
-       touch {output}
+       cp {params.copy_from} {output}
+       """
+
+rule prokka:
+    input:
+       str(ASSEMBLY_FP/'spades_bins'/'{sample}'/'{sample}_assembled_contigs.fna')
+    output:
+       str(ANNOTATION_FP/'prokka'/'{sample}'/'{sample}.ffn')
+    params:
+       outdir = str(ANNOTATION_FP/'prokka'/'{sample}')
+    conda:
+       "sbx_SPARCQ_prokka_env.yml"
+    shell:
+       """
+       prokka --compliant --centre CHOP --outdir {params.outdir} --locustag {wildcards.sample} --prefix {wildcards.sample} --force {input} 
        """
 
 checkm_yml = Cfg['sbx_SPARCQ'].get('checkm_yml')
@@ -72,7 +83,7 @@ if checkm_yml:
 
 rule checkm_tree:
     input:
-       str(ASSEMBLY_FP/'spades'/'{sample}'/'done')
+       str(ASSEMBLY_FP/'spades_bins'/'{sample}'/'{sample}_assembled_contigs.fna')
     output:
        str(ASSEMBLY_FP/'checkm_output'/'tree_output'/'{sample}'/'tree_done')
     threads:
@@ -138,11 +149,10 @@ if taxid_yml:
 
 rule quast:
     input:
-       str(ASSEMBLY_FP/'spades'/'{sample}'/'done')
+       str(ASSEMBLY_FP/'spades_bins'/'{sample}'/'{sample}_assembled_contigs.fna')
     output:
        str(ASSEMBLY_FP/'quast_output'/'{sample}'/'icarus.html')
     params:
-       fna_input = str(ASSEMBLY_FP/'spades_bins'/'{sample}'/'{sample}_assembled_contigs.fna'),
        quast_output = str(ASSEMBLY_FP/'quast_output'/'{sample}')
     run:
        if taxid_yml and wildcards.sample in NCBI_ID:
@@ -152,25 +162,24 @@ rule quast:
           ncbi_fna=glob.glob(params.quast_output+'/**/*.fna.gz', recursive = True)[0]
           ncbi_gff=glob.glob(params.quast_output+'/**/*.gff.gz', recursive = True)[0]
           shell("""
-          quast.py {params.fna_input} -r {ncbi_fna} -g {ncbi_gff} -o {params.quast_output}
+          quast.py {input} -r {ncbi_fna} -g {ncbi_gff} -o {params.quast_output}
           """)
        else:
           shell("""
-          quast.py {params.fna_input} -o {params.quast_output}
+          quast.py {input} -o {params.quast_output}
           """)
    
 rule index_assembled_genomes:
     input:
-        str(ASSEMBLY_FP/'spades'/'{sample}'/'done')
+        str(ASSEMBLY_FP/'spades_bins'/'{sample}'/'{sample}_assembled_contigs.fna')
     output:
         str(ASSEMBLY_FP/'read_mapping'/'{sample}'/'bwa'/'{sample}_assembled_contigs.fna.amb')
     params:
-        spades_sample = str(ASSEMBLY_FP/'spades_bins'/'{sample}'/'{sample}_assembled_contigs.fna'),
         bwa_dir = str(ASSEMBLY_FP/'read_mapping'/'{sample}'/'bwa'),
         bwa_sample = str(ASSEMBLY_FP/'read_mapping'/'{sample}'/'bwa'/'{sample}_assembled_contigs.fna')
     shell:
         "mkdir -p {params.bwa_dir} && \
-         cp {params.spades_sample} {params.bwa_dir} && \
+         cp {input} {params.bwa_dir} && \
          cd {params.bwa_dir} && \
          bwa index {params.bwa_sample}"
 
