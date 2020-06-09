@@ -1,9 +1,7 @@
 taxon: {
-'pseudomonas': 'Pseudomonas aeruginosa',
-'saureus': 'Staphylococcus aureus',
+'ASM2732v1': 'Mycoplasma genitalium',
 }
 
 rank: {
-'pseudomonas': 'species',
-'saureus': 'species',
+'ASM2732v1': 'species',
 }

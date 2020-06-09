@@ -2,7 +2,7 @@
 
 ## Introduction
 
-SPARCQ is an extension for the sunbeam pipeline for de novo microbial genome assembly and quality assessment.
+SPARCQ is an extension for the sunbeam pipeline for de novo microbial genome assembly and quality assessment. In addition, it uses anvi'o for contamination assessment and taxonomic assignment with single copy genes, amongst other things. An R markdown template has been provided that will nicely display the results generated from this pipeline. Illumina reads are provided for testing.
 
 ### Installation
 1. Add packages in sbx_SPARCQ_env.yml to sunbeam environment.yml and install with your sunbeam's ./install.sh --update env
@@ -18,7 +18,7 @@ cat config.yml >> /path/to/sunbeam_config.yml
 4. Recommended for cluster: add the memory specifications in cluster.json, especially for checkm_tree rule
 
 ## Options for config.yml
-threads (SPAdes, BWA, samtools): # of threads to use for running programs
+threads (SPAdes, BWA, samtools, anvio): # of threads to use for running programs
 
 checkm_yml (optional): YAML file containing a sample:rank and sample:taxon dictionary for CheckM parameters (see example);
 rank is one of {life,domain,phylum,class,order,family,genus,species};
@@ -28,8 +28,7 @@ taxid_yml (optional): YAML file containing a sample:TaxonID dictionary for refer
 
 window_size (Read mapping): define the window size to do sliding window coverage
 
-sampling (read mapping): define minimum length of data to slide over
+sampling (read mapping): define minimum length of the contig to slide over
 
 ## Contributors
-This extension was adapted from pipelines written by Scott Daniel, Jung-Jin Lee, Ceylan Tanes, and Louis Taylor. Read mapping rules were adapted from the sunbeam pipeline (https://github.com/sunbeam-labs/sunbeam/tree/stable/rules/mapping) and sbx_mapping_withFilter (https://github.com/ctanes/sbx_mapping_withFilter)
-
+This extension was adapted from pipelines written by Scott Daniel, Jung-Jin Lee, Ceylan Tanes, and Louis Taylor. Spades rules were adapted from sbx_spades (https://github.com/sunbeam-labs/sbx_spades). Read mapping rules were adapted from the sunbeam pipeline (https://github.com/sunbeam-labs/sunbeam/tree/stable/rules/mapping) and sbx_mapping_withFilter (https://github.com/ctanes/sbx_mapping_withFilter). Anvio rules were adapted from anvio_pan (https://github.com/junglee0713/anvio_pan)

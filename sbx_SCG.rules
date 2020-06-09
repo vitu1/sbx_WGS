@@ -1,0 +1,255 @@
+# -*- mode: Snakemake -*-
+#
+# Rules for de novo assembly using SPAdes and post-assembly assessments
+
+from sunbeamlib import samtools
+import glob
+import pysam
+import re
+import yaml
+
+rule all_SPARCQ:
+    input:
+       [expand([str(ASSEMBLY_FP/'checkm_output'/'summary'/'{sample}'/'extended_summary.tsv'),
+                str(ASSEMBLY_FP/'checkm_output'/'plots_output'/'{sample}'/'plots_done'),
+                str(ASSEMBLY_FP/'quast_output'/'{sample}'/'icarus.html'),
+                str(ASSEMBLY_FP/'read_mapping'/'{sample}'/'bwa'/'{sample}.bam.bai'),
+                str(ANNOTATION_FP/'prokka'/'{sample}'/'{sample}.ffn'),
+                str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_completeness.tsv'),
+                str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_taxon_classify.tsv'),
+               ],sample=Samples.keys()),
+       str(ASSEMBLY_FP/'read_mapping'/'all_coverage.csv'),
+       str(ASSEMBLY_FP/'read_mapping'/'all_numReads.csv'),
+       str(ASSEMBLY_FP/'read_mapping'/'all_sliding_coverage.csv'),
+       str(ASSEMBLY_FP/'anvio'/'GENOMES.db'),
+       str(ASSEMBLY_FP/'anvio'/'phylogenomics'/'phylogenomic-tree.txt'),
+       ]
+
+rule reformat_fasta:
+    input: 
+        str(ASSEMBLY_FP/'spades_bins'/'{sample}'/'{sample}_assembled_contigs.fna')
+    output:
+        str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_reformatted_contigs.fa')
+    params:
+        simple_names_file = str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_simplify_names.txt')
+    conda:
+       "sbx_SPARCQ_conda_env.yml"
+    shell:
+        """
+        anvi-script-reformat-fasta {input} \
+          --output-file {output} \
+          --min-len 200 \
+          --simplify-name \
+          --report-file {params.simple_names_file}
+        """
+
+rule get_contig_db:
+    input:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_reformatted_contigs.fa')
+    output:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'.DONEhmm')
+    threads:
+      Cfg['sbx_SPARCQ']['threads']
+    params:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_contigs.db')
+    conda:
+      "sbx_SPARCQ_conda_env.yml"
+    shell:
+      """
+      anvi-gen-contigs-database --contigs-fasta {input} \
+        --output-db-path {params} \
+        --project-name {wildcards.sample} && \
+      anvi-run-hmms --contigs-db {params} \
+        --num-threads {threads} && \
+      touch {output}
+      """
+
+rule cog_setup:
+    input:
+      expand(str(ASSEMBLY_FP/'anvio'/'{sample}'/'.DONEhmm'), sample=Samples.keys())
+    output:
+      str(ASSEMBLY_FP/'anvio'/'.DONEcogsetup')
+    threads:
+      Cfg['sbx_SPARCQ']['threads']
+    conda:
+      "sbx_SPARCQ_conda_env.yml"
+    shell:
+      """
+      anvi-setup-ncbi-cogs \
+        --just-do-it \
+        --num-threads {threads} && \
+      touch {output}
+      """ 
+
+rule ncbi_cogs:
+    input:
+      str(ASSEMBLY_FP/'anvio'/'.DONEcogsetup')
+    output:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'.DONEcog') 
+    threads:
+      Cfg['sbx_SPARCQ']['threads']
+    params:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_contigs.db')
+    conda:
+      "sbx_SPARCQ_conda_env.yml"
+    shell:
+      """
+      anvi-run-ncbi-cogs --contigs-db {params} \
+        --num-threads {threads} --search-with blastp && \
+      touch {output}
+      """
+
+def get_external_genome_path(contig_db_list, output_fp):
+    with open(output_fp, 'w') as f:
+        f.write('name\tcontigs_db_path\n')
+        for db in contig_db_list:
+            name = re.sub('.*./', '', db)
+            name = re.sub('_contigs.db', '', name)
+            name = re.sub('-|\.', '_', name)
+            f.write(name + '\t' + db + '\n')
+
+rule external_genome_path:
+    input:
+      expand(str(ASSEMBLY_FP/'anvio'/'{sample}'/'.DONEcog'), sample=Samples.keys())
+    output:
+      str(ASSEMBLY_FP/'anvio'/'external_genome_path.tsv')
+    params:
+      expand(str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_contigs.db'), sample=Samples.keys())
+    run:
+      get_external_genome_path(params[0], output[0])
+
+rule build_genome_storage:
+    input:
+      str(ASSEMBLY_FP/'anvio'/'external_genome_path.tsv')
+    output:
+      str(ASSEMBLY_FP/'anvio'/'GENOMES.db')
+    conda:
+      "sbx_SPARCQ_conda_env.yml"
+    shell:
+      """
+      anvi-gen-genomes-storage \
+        --external-genomes {input} \
+        --output-file {output}
+      """
+
+rule scg_setup:
+    input:
+      expand(str(ASSEMBLY_FP/'anvio'/'{sample}'/'.DONEcog'), sample=Samples.keys())
+    output:
+      str(ASSEMBLY_FP/'anvio'/'.DONEscgsetup')
+    threads:
+      Cfg['sbx_SPARCQ']['threads']
+    conda:
+      "sbx_SPARCQ_conda_env.yml"
+    shell:
+      """
+      anvi-setup-scg-databases \
+        --redo-databases \
+        --num-threads {threads} && \
+      touch {output}
+      """
+
+rule anvi_scg_annotate:
+    input:
+      str(ASSEMBLY_FP/'anvio'/'.DONEscgsetup')
+    output:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'.DONEscg')
+    threads:
+      Cfg['sbx_SPARCQ']['threads']
+    params:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_contigs.db')
+    conda:
+      "sbx_SPARCQ_conda_env.yml"
+    shell:
+      """
+      anvi-run-scg-taxonomy \
+        -c {params} \
+        --num-parallel-processes {threads} \
+        --num-threads 4 && \
+      touch {output}
+      """
+
+rule anvi_classify:
+    input:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'.DONEscg')
+    output:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_taxon_classify.tsv')
+    params:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_contigs.db')    
+    threads:
+      Cfg['sbx_SPARCQ']['threads']
+    conda:
+      "sbx_SPARCQ_conda_env.yml"
+    shell:
+      """
+      anvi-estimate-scg-taxonomy \
+        -c {params} \
+        -o {output} \
+        --num-threads {threads}
+      """
+
+rule anvi_gen_stats:
+    input:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'.DONEscg')
+    output:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_contigs.db.hits')
+    params:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_contigs.db')
+    threads:
+      Cfg['sbx_SPARCQ']['threads']
+    conda:
+      "sbx_SPARCQ_conda_env.yml"
+    shell:
+      """
+      anvi-script-gen_stats_for_single_copy_genes.py {params}
+      """
+
+rule anvi_completeness:
+    input:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_contigs.db.hits')
+    output:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_completeness.tsv')
+    params:
+      str(ASSEMBLY_FP/'anvio'/'{sample}'/'{sample}_contigs.db')
+    threads:
+      Cfg['sbx_SPARCQ']['threads']
+    conda:
+      "sbx_SPARCQ_conda_env.yml"
+    shell:
+      """
+      anvi-estimate-genome-completeness \
+        -c {params} \
+        -o {output}
+      """
+
+rule concat_scgs:
+    input:
+      str(ASSEMBLY_FP/'anvio'/'external_genome_path.tsv')
+    output:
+      str(ASSEMBLY_FP/'anvio'/'phylogenomics'/'concat_scgs.fa')
+    conda:
+      "sbx_SPARCQ_conda_env.yml"
+    shell:
+      """
+      anvi-get-sequences-for-hmm-hits \
+        --external-genomes {input} \
+        -o {output} \
+        --hmm-source Bacteria_71 \
+        --return-best-hit \
+        --get-aa-sequences \
+        --concatenate
+      """
+
+rule gen_phylogenome_tree:
+    input:
+      str(ASSEMBLY_FP/'anvio'/'phylogenomics'/'concat_scgs.fa')
+    output:
+      str(ASSEMBLY_FP/'anvio'/'phylogenomics'/'phylogenomic-tree.txt')
+    conda:
+      "sbx_SPARCQ_conda_env.yml"
+    shell:
+      """
+      anvi-gen-phylogenomic-tree \
+        -f {input} \
+        -o {output} 
+      """

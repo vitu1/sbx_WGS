@@ -3,3 +3,6 @@ channels:
  - bioconda
 dependencies:
  - prokka
+ - anvio=6.2
+ - diamond=0.9.14
+ - fasttree

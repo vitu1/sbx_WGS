@@ -8,19 +8,6 @@ import pysam
 import re
 import yaml
 
-rule all_SPARCQ:
-    input:
-       [expand([str(ASSEMBLY_FP/'checkm_output'/'summary'/'{sample}'/'extended_summary.tsv'),
-                str(ASSEMBLY_FP/'checkm_output'/'plots_output'/'{sample}'/'plots_done'),
-                str(ASSEMBLY_FP/'quast_output'/'{sample}'/'icarus.html'),
-                str(ASSEMBLY_FP/'read_mapping'/'{sample}'/'bwa'/'{sample}.bam.bai'),
-                str(ANNOTATION_FP/'prokka'/'{sample}'/'{sample}.ffn')],
-                sample=Samples.keys()),
-       str(ASSEMBLY_FP/'read_mapping'/'all_coverage.csv'),
-       str(ASSEMBLY_FP/'read_mapping'/'all_numReads.csv'),
-       str(ASSEMBLY_FP/'read_mapping'/'all_sliding_coverage.csv'),
-       ]
-
 ruleorder: run_spades_paired > run_spades_unpaired
 
 rule run_spades_paired:
@@ -68,7 +55,7 @@ rule prokka:
     params:
        outdir = str(ANNOTATION_FP/'prokka'/'{sample}')
     conda:
-       "sbx_SPARCQ_prokka_env.yml"
+       "sbx_SPARCQ_conda_env.yml"
     shell:
        """
        prokka --compliant --centre CHOP --outdir {params.outdir} --locustag {wildcards.sample} --prefix {wildcards.sample} --force {input} 

@@ -1,0 +1,448 @@
+---
+title: "Basic Bioinformatics Overview"
+author: "PennCHOP Microbiome Program"
+date: \today
+geometry: margin=3cm
+output: 
+    pdf_document:
+        keep_tex: false
+        toc: true
+        toc_depth: 3
+        includes:
+            in_header: ~/TeX_packages_commands.sty
+---
+
+<!-- ================================================================================================ -->
+<!--   Beginning of Preamble : Preamble seldom requires change                                        -->
+<!-- ================================================================================================ -->
+
+```{r eval=FALSE, include=FALSE}
+#notes
+#neat: you can run this following command in the console to give your reports custom names (or date-stamp them)
+rmarkdown::render('BasicReport_WGS.Rmd',output_file = paste(Sys.Date(),'_BasicShotgunReport.pdf', sep=''))
+```
+
+<!-- knitr setup -->
+```{r knitr setup, echo=FALSE}
+### ================
+###   knitr setup
+### ================
+library(knitr)
+opts_chunk$set(
+  tidy=FALSE,
+  cache=TRUE,
+  echo=FALSE,
+  warning=FALSE,
+  message=FALSE,
+  dpi=100,
+  fig.width=8,
+  fig.height=8,
+  fig.align = "center"
+  )
+```
+
+<!-- R packages -->
+```{r libraries, message=FALSE, warning=FALSE}
+### ================
+###   R packages
+### ================
+#These packages will also help us more easily manipulate our data
+#install.packages(c("dplyr", "magrittr", "qiimer", "pander", "ape", "vegan", "ggplot2", "gplots", "pheatmap", "tidyr", "usedist", "readr", "tibble", "grid", "stringr", "reshape2"))
+library(dplyr)
+library(magrittr)
+library(qiimer)
+library(pander)
+#Analyses of Phylogenetics and Evolution package. Required for tree calculations to be used with phyloseq
+library(ape)
+#The vegan package provides tools for descriptive community ecology. It has most basic functions of diversity analysis, community ordination and dissimilarity analysis. In general, this package is used for Bray-Curtis and Jaccard analyses.
+library(vegan)
+#Graphing package used in phyloseq. To edit the default setting of a plot, you need to use functions in this package.
+library(ggplot2)
+#This package is used to calculate and plot Venn diagrams as well as heatmaps
+library(gplots)
+library(pheatmap)
+#This package will help us more easily manipulate our data, which are matrices
+library(tidyr)
+library(usedist)
+library(readr)
+library(tibble)
+library(grid)
+library(stringr)
+library(reshape2)
+library(forcats)
+library(ggtree)
+
+```
+
+<!-- resources -->
+```{r resources}
+### ================
+###   R resources
+### ================
+#source("R_functions.R")
+```
+
+<!-- user defined functions -->
+```{r user defined functions}
+### ================
+###   User defined functions (these functions can be defined in R_functions.R and sourced from the above chunk)
+### ================
+
+change_date_format <- function(d) { #change date format to MM-DD-YY
+  if(grepl("-", d)) {
+    paste(substr(d,6,7), substr(d,9,10), substr(d,1,4), sep="-")
+  }
+  else if (grepl("/", d)) {
+    gsub("/", "-", d)
+  } 
+  else if (str_length(unique(d)) == 8) {
+    paste(substr(d,5,6), substr(d,7,8), substr(d,1,4), sep="-")
+  }
+  else {
+    stop (simpleError(paste0("Your date ", d, " is not in YYYY-MM-DD, MM/DD/YY, or MMDDYYYY format.")))
+  }
+}
+
+read_sample_tsv <- function(fp) {
+  samp_name <- sub(".*\\/", "", fp)
+  samp_name <- sub("_contigs.db.*", "", samp_name)
+  samp_df <- read_tsv(fp)
+  samp_df$sample <- samp_name
+  return(samp_df)
+}
+
+
+```
+
+```{r constants and file paths}
+### number of samples threshold to show heatmap on the page
+sample_threshold <- 100
+
+### minimum reads to Keep
+min_reads <- 30000
+
+### setwd
+#fill in your project dir (alternatively, you can use the "here" library)
+#root_dir = "/Volumes/microbiome/analysis/[username]/[investigator_project_name]"
+
+### mapping file path
+mapping_file_fp <- list.files(file.path(root_dir, "metadata"), pattern = ".tsv|.txt", full.names = TRUE)
+
+### preprocess summary results filepath
+preprocess_fp <- file.path(root_dir, "Data", "preprocess_summary.tsv")
+
+### read quality
+fastqc_fp = file.path(root_dir, "Data", "fastqc_quality.tsv")
+
+### directory holding sample directories with anvio results
+anvio_fp = file.path(root_dir, "Data", "anvio")
+
+### directory holding sample directories with checkm results
+checkm_fp = file.path(root_dir, "Data", "checkm_output")
+
+### sliding_coverage
+sliding_fp = file.path(root_dir, "Data", "all_sliding_coverage.csv")
+
+```
+
+```{r sample_sheet_import, echo=FALSE}
+
+s <- read.delim(mapping_file_fp, sep = '\t') %>%
+  rename_all(recode, X.SampleID = "SampleID", SubjectID = "subject_id", SampleType = "sample_type", HostSpecies = "host_species") %>% ##rename columns
+  filter(!grepl("#", SampleID)) %>%
+  filter(rowSums(is.na(.)|.=="") != ncol(.)) %>% #filter out rows with NA's or blanks
+  mutate(SampleID = as.character(SampleID)) %>%
+  mutate(isControl = grepl('Extract|Vibrio|EBneg|Blank|Mock|DNAfreewater|geneblock', SampleID, ignore.case = TRUE))
+  
+  
+color_by <- NULL
+shape_by <- NULL
+potential_headers <- c("study_group", "sample_type", "study_day", "SubjectID",
+                       "current_antibiotics", "host_species", "cage_number") #pick 2
+header_idx <- which(is.element(potential_headers, colnames(s)))
+
+if(length(header_idx)>0){
+  color_by <- potential_headers[header_idx[1]]
+}
+if(length(header_idx)>1){
+  shape_by <- potential_headers[header_idx[2]]
+}
+
+preprocess <- read.delim(preprocess_fp) %>%
+  mutate(Samples = sub(".json", "", Samples)) %>%
+  filter(Samples %in% s$SampleID)
+
+quality_summary_headers <- c('sample_type', 'study_day')
+header_idx <- which(is.element(quality_summary_headers, colnames(s)))
+quality_by <- ifelse(length(header_idx)>0, quality_summary_headers[header_idx[1]], NULL)
+
+all_dates <- as.character(unique(s$run_start_date))
+run_date <- paste(lapply(all_dates, change_date_format), collapse=', ')
+investigator <- paste(unique(s$investigator), collapse = ", ")
+investigator <- gsub("(^|[[:space:]])([[:alpha:]])", "\\1\\U\\2", investigator, perl=TRUE)
+```
+
+# Introduction
+
+This report is based on the results of sequencing performed on `r run_date` for `r investigator` Project. 
+
+# Demultiplexing and quality control
+
+## Number of read pairs per sample after demultiplexing
+
+Samples were sequenced on Hiseq 2500 and demultiplexed. The demultiplexing step involves matching the barcode sequences associated with each sample to the sequence each read is tagged with.
+
+```{r reads_histogram, echo=FALSE}
+preprocess %>%
+  mutate(num_seq=input/1000000) %>%
+  merge(s[c("SampleID", "sample_type")], by.y="SampleID", by.x="Samples") %>%
+  ggplot(aes(x=num_seq)) +
+    geom_histogram(aes(fill=sample_type), binwidth=0.2, boundary=TRUE) +
+    theme_bw() + 
+    labs(
+      x="Number of read pairs in sample (millions, M)",
+      y="Number of samples"
+    )
+#ggsave(filename="summary_dnabc.pdf", width=7, height=5, useDingbats=F)
+```
+
+\newpage
+
+## Average nucleotide quality after adapter trimming and quality control
+
+Nextera-XT adapters were removed using trimmomatic-0.33. Nucleotide quality for each position was averaged across all reads using FASTQC.
+
+```{r fastqc, echo=FALSE}
+read.delim(fastqc_fp, sep='\t') %>%
+  melt(id.vars="Samples", variable.name="Position", value.name = "Quality") %>%
+  mutate(
+    Position = sub("X", "", Position),
+    Position = sub("\\.\\d+", "", Position, perl = TRUE),
+    Position = as.numeric(Position)) %>%
+  mutate(SampleID=sub("^(.*)_(R[12])$", "\\1", Samples), Direction=sub("^(.*)_([12])$", "\\2", Samples)) %>%
+  mutate(Direction = factor(Direction)) %>%
+  group_by(Direction, Position) %>%
+  summarise(MeanQual = mean(Quality), SdQual = sd(Quality)) %>%
+  mutate(LowQual = MeanQual - SdQual, HighQual = MeanQual + SdQual) %>%
+  ungroup() %>%
+  ggplot(aes(x=Position, y=MeanQual)) + 
+    geom_errorbar(aes(ymin=LowQual, ymax=HighQual)) +
+    facet_wrap(~ Direction) +
+    geom_line() +
+    geom_point() +
+    theme_bw() + 
+    labs(x='Position in sequence read', y='Average quality score per sample')
+#ggsave(filename='quality_after.pdf', width=7, height=5, useDingbats=F)
+
+```
+
+\newpage
+
+## Overall distribution of percentage reads removed in quality control
+
+The low quality reads defined by Trimmomatic-0.33 were discarded from further analysis. Human DNA was filtered using BWA with HG38 version of human genome as reference. Reads mapping to the PhiX genome was also removed. Only the reads tagged as non-human were further analyzed.
+
+```{r quality, echo=FALSE}
+
+preprocess %>%
+  mutate(low_quality = (input - host - nonhost) / input) %>%
+  mutate(human = host / input) %>%
+  mutate(non_human = nonhost / input) %>%
+  merge(s[c("SampleID", "isControl", quality_by)], by.y="SampleID", by.x="Samples") %>%
+  filter(!isControl) %>%
+  droplevels() %>%
+  arrange(desc(human)) %>%
+  mutate(Sample_num=row_number()) %>%
+  melt(c("Sample_num", quality_by), c("low_quality", "human", "non_human")) %>%
+  ggplot(aes(x=Sample_num, y=value)) +
+    geom_area(aes(fill=variable), position='stack') + 
+    facet_grid(.~eval(parse(text=quality_by)), scales = "free_x") +
+    scale_fill_brewer(palette="Set1") + 
+    theme(axis.text.x = element_blank()) +
+    scale_x_continuous(expand=c(0,0)) +
+    scale_y_continuous(expand=c(0,0), labels=scales:::percent) +
+    labs(x="Samples", y="Percentage of reads", fill="")
+#ggsave(filename='preprocess_summary.pdf', width=5, height=7, useDingbats=F)
+```
+
+\blandscape
+
+# Contamination - anvi'o
+
+Contamination analysis of single bacterial isolates were performed using anvi'o
+
+The heatmap shows the distribution of single copy genes found in each sample. Samples with more than 1 set of single copy genes are likely contaminated. 
+
+```{r heatmap, fig.height=5, fig.width=9}
+
+scg_list <- list.files(file.path(anvio_fp), pattern = ".genes", full.names = TRUE, recursive = TRUE) %>%
+  lapply(read_sample_tsv) %>% 
+  bind_rows
+
+scg <- list.files(file.path(anvio_fp), pattern = ".hits", full.names = TRUE, recursive = TRUE) %>%
+  lapply(read_sample_tsv) %>% 
+  bind_rows %>%
+  filter(e_value < 1e-10) %>%
+  group_by(sample, source, gene) %>%
+  summarize(n = n()) %>%
+  ungroup() %>%
+  merge(scg_list, by = c("sample", "source", "gene"), all.y=TRUE) %>%
+  filter(source == "Bacteria_71") %>%
+  mutate(counts = ifelse(is.na(n), 0, n)) %>%
+  mutate(counts = factor(counts, levels = sort(unique(counts), decreasing = TRUE))) %>%
+  arrange(counts) %>%
+  mutate(gene = factor(gene, levels = unique(gene)))
+  
+scg %>%
+  ggplot(aes(y=sample, x=gene)) + 
+    geom_tile(aes(fill = counts)) + 
+    #scale_fill_manual(values = c()) +
+    scale_fill_viridis_d(direction = -1) +
+    theme_bw() +
+    facet_wrap(~source, scales = "free_y") +
+    scale_y_discrete(expand = c(0,0)) +
+    theme(
+      strip.background = element_blank(),
+      panel.grid = element_blank(),
+      axis.text.y = element_text(),
+      axis.text.x = element_text(size = 5, angle = -45, vjust=.5, hjust=0)
+    ) +
+    labs(
+      x="Single Copy Genes",
+      y="Samples", fill="Gene counts"
+    )
+```
+
+\elandscape
+
+# Completeness - CheckM
+
+Completeness and contamination analysis of the single bacterial isolates were performed using CheckM based on the predicted or given lineage of the isolates
+
+```{r completeness}
+
+checkm_completeness <- list.files(file.path(checkm_fp), pattern = "extended_summary.tsv", full.names = TRUE, recursive = TRUE) %>%
+  lapply(read_tsv) %>% 
+  bind_rows %>%
+  rename(SampleID = "Bin Id") %>%
+  mutate(SampleID = gsub("_assembled_contigs", "", SampleID)) %>%
+  rename(`Complete` = "Completeness") %>%
+  rename(`Contam- ination` = "Contamination") %>%
+  rename(`# genes` = "# predicted genes") %>%
+  select(SampleID, `Genome size (bp)`, `# contigs`, `# genes`, `Complete`, `Contam- ination`, `Strain heterogeneity`, `N50 (scaffolds)`)
+
+checkm_completeness %>%
+  pander(split.table = Inf)
+
+```
+\newpage
+
+# Read map coverage
+
+Coverage of each contig from the assembled genome can be visualized by mapping back the reads to the assembled genomes in 5000 bp increments
+
+```{r, read map coverage}
+
+sliding_cov <- read.csv(sliding_fp) %>%
+  mutate(window = 5000) %>% #this window size can change depending on the pipeline
+  mutate(Segment.Length = gsub("^.*length_", "", Segment)) %>% 
+  mutate(Segment.Length = as.numeric(gsub("_cov.*", "", Segment.Length))) %>%
+  arrange(-Segment.Length) %>%
+  mutate(Segment = factor(Segment, levels = unique(Segment)))
+
+for (sample in unique(sliding_cov$Genome)) {
+  
+  g <- sliding_cov %>%
+    filter(Genome == sample) %>%
+    ggplot(aes(x=Segment, y=window, fill=Average)) +
+    geom_col() +
+    theme_bw() +
+    theme(
+      axis.text.x = element_blank(),
+      panel.grid = element_blank(),
+      strip.background = element_blank()
+      ) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_fill_viridis_c() +
+    labs(
+      x="Contigs", y="Length of contig",
+      fill="Average read coverage", title = sample
+    )
+  
+  print(g)
+  cat("\n\n")
+}
+
+```
+
+\newpage
+
+# Taxonomy - anvi'o
+
+Using single copy genes from The Genome Taxonomy Database, anvi'o searches and estimates a consensus taxonomy for each genome 
+
+```{r classification, fig.height=9}
+
+classify <- list.files(file.path(anvio_fp), pattern = "_classify.tsv", full.names = TRUE, recursive = TRUE) %>%
+  lapply(read_tsv) %>% 
+  bind_rows %>%
+  rename(SampleID = bin_name) %>%
+  mutate(classification = ifelse(t_species != "None", paste("Species: ", t_species),
+                                 ifelse(t_genus != "None", paste("Genus: ", t_genus),
+                                        ifelse(t_family != "None", paste("Family: ", t_family),
+                                               ifelse(t_order != "None", paste("Order: ", t_order),
+                                                      ifelse(t_class != "None", paste("Class: ", t_class), paste("Phylum: ", t_phylum))))))) %>%
+  select(SampleID, total_scgs, supporting_scgs, classification) 
+
+classify %>%
+  pander(split.table = Inf)
+
+```
+\newpage
+# Phylogenomics of samples
+
+```{r phylogenomics}
+
+phylo_tree <- read.tree(file.path(anvio_fp, "phylogenomics", "phylogenomic-tree.txt"))
+
+ggtree(phylo_tree,  size = 0.2) +
+  geom_tiplab()
+
+```
+
+\newpage
+
+# Appendix
+
+## Number of reads before and after trimmming Illumina adapter sequences with Trimmomatic.
+
+```{r trimmed_reads, echo=FALSE}
+preprocess %>%
+  arrange(-both_kept) %>%
+  select(
+    Sample = Samples,
+    Input = input,
+    Dropped = dropped,
+    `Forward only` = fwd_only,
+    `Reverse only` = rev_only,
+    `Both kept` = both_kept) %>%
+  pander(split.table = Inf)
+```
+
+\newpage
+
+## Number of reads before and after filtering of host genome sequence.
+
+```{r filtered_reads, echo=FALSE}
+preprocess %>%
+  mutate(
+    `Percent host reads` = 100 * host / (nonhost + host),
+    `Percent host reads` = round(`Percent host reads`, 2)) %>%
+  arrange(`Percent host reads`) %>%
+  select(
+    Sample = Samples,
+    `Host reads` = host,
+    `Non-host reads` = nonhost,
+    `Percent host reads`) %>%
+  pander(split.table = Inf)
+```
