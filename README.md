@@ -1,8 +1,8 @@
-# sbx_SPARCQ (SPAdes, Read map coverage, CheckM, and QUAST)
+# sbx_WGS (Whole Genome Sequencing)
 
 ## Introduction
 
-SPARCQ is an extension for the sunbeam pipeline for de novo microbial genome assembly and quality assessment. In addition, it uses anvi'o for contamination assessment and taxonomic assignment with single copy genes, amongst other things. An R markdown template has been provided that will nicely display the results generated from this pipeline. Illumina reads are provided for testing.
+sbx_WGS is an extension for the sunbeam pipeline for de novo microbial genome assembly and quality assessment. This pipeline uses SPAdes for single genome assembly and CheckM, QUAST, and Read map coverage of the assembled genome for quality assessment (sbx_SPARCQ.rules). In addition, it uses anvi'o for contamination assessment and taxonomic assignment with single copy genes, amongst other things (sbx_SCG.rules). An R markdown template has been provided that will nicely display the results generated from this pipeline. Illumina reads are provided for testing.
 
 ### Installation
 1. Add packages in sbx_SPARCQ_env.yml to sunbeam environment.yml and install with your sunbeam's ./install.sh --update env
