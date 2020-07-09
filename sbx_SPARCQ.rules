@@ -24,7 +24,7 @@ rule run_spades_paired:
        copy_from = str(ASSEMBLY_FP/'spades'/'{sample}'/'contigs.fasta')
     shell:
        """
-       spades.py -1 {input.r1} -2 {input.r2} -o {params.outdir} -t {threads} -m 100 && \
+       spades.py -1 {input.r1} -2 {input.r2} -o {params.outdir} -t {threads} --cov-cutoff 5.0 && \
        mkdir -p {params.mk_dir} && \
        cp {params.copy_from} {output}
        """
@@ -42,7 +42,7 @@ rule run_spades_unpaired:
        copy_from = str(ASSEMBLY_FP/'spades'/'{sample}'/'contigs.fasta')
     shell:
        """
-       spades.py --s 1 {input.r1} -o {params.outdir} -t {threads} -m 100 && \
+       spades.py --s 1 {input.r1} -o {params.outdir} -t {threads} --cov-cutoff 5.0 && \
        mkdir -p {params.mk_dir} && \
        cp {params.copy_from} {output}
        """
